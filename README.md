@@ -14,10 +14,19 @@ viva junto a sus repos hermanos (`houselocator-ingest`, `houselocator-bot`,
 
 ```bash
 cp .env.example .env   # rellena POSTGRES_PASSWORD y las claves de Telegram
-./scripts/bootstrap-workspace.sh   # clona los repos hermanos que falten
-./scripts/verify-local-stack.sh    # levanta Postgres, corre migraciones, comprueba el esquema
-docker compose up -d ingest bot    # arranca el resto del stack
+make bootstrap          # clona los repos hermanos que falten
+make up                  # levanta db + migraciones + ingest + bot, todo de una vez
+make logs                 # sigue los logs de ingest/bot en vivo
+make down                  # para todo
 ```
+
+Actualmente el sistema solo corre mientras tienes Docker Desktop abierto y
+ejecutas `make up` — no hay VPS desplegado todavía (ver
+[decisión de hosting en `docs/HLD.md` §6](docs/HLD.md)).
+
+Otros comandos: `make ps` (estado de los contenedores), `make verify`
+(smoke test de Postgres+migraciones sin levantar ingest/bot), `make
+migrate` (solo aplicar migraciones pendientes).
 
 ## Migraciones
 
