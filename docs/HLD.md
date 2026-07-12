@@ -61,8 +61,8 @@ paquete.
   Postgres, emisión de eventos (tabla outbox), snapshot diario de
   estadísticas de zona, auto-monitorización (canary + alertas de scraper
   roto al chat admin de Telegram).
-- **Stack**: Python 3.12 (gestor `uv`), `httpx` + `curl_cffi` (impersonación
-  TLS para Idealista), `selectolax` para HTML, `pydantic` v2 para el modelo
+- **Stack**: Python 3.12 (gestor `uv`), `httpx` (Fotocasa + API oficial de
+  Idealista), `selectolax` para HTML, `pydantic` v2 para el modelo
   normalizado, `APScheduler` (scheduler in-process), `tenacity` (reintentos),
   `psycopg3` (SQL directo, sin ORM). `pytest` con fixtures HTML/JSON
   congeladas como tests de contrato por portal.
@@ -227,20 +227,45 @@ tests/
    scope, actualiza precios/`last_seen_at`, dispara delisting, luego corre
    `stats.py`.
 
-**Anti-bot por portal**:
-- **Fotocasa** (permisivo): `httpx`, headers realistas, 1 req/3–5s. Parsear
-  el JSON `__NEXT_DATA__` en vez de selectores CSS (resistente a rediseños).
-- **Idealista** (Cloudflare/fingerprinting), estrategia en escalera:
-  1. `curl_cffi` con `impersonate="chrome"` + cookies persistidas + 1
-     req/8–15s (suele bastar para volumen personal).
-  2. Si 403/challenge persistente: FlareSolverr como sidecar en el compose,
-     solo para las peticiones bloqueadas.
-  3. Último recurso (documentado, no contratado de entrada): proxy
-     residencial de pago por GB.
-  - Solicitar la API oficial de Idealista (gratuita, ~100 req/mes OAuth)
-    como complemento legítimo, aunque insuficiente como fuente principal.
-- **Circuit breaker global**: 403/429/captcha → backoff exponencial
-  (5min→1h→6h), `status='blocked'` en `scrape_runs`, alerta al chat admin.
+**Anti-bot por portal** (actualizado tras verificación real, fases 1.1/1.2):
+- **Fotocasa** (permisivo): `httpx`, headers realistas, 1 req/3–5s. Parsea
+  el JSON embebido en `<script id="__initial_props__">` — verificado contra
+  el sitio real; la suposición inicial de este documento (`__NEXT_DATA__`,
+  convención de Next.js) era incorrecta, Fotocasa ya no la usa.
+  Implementado y probado end-to-end en `houselocator-ingest/src/ingest/portals/fotocasa.py`.
+- **Idealista**: la suposición inicial de este documento (protección tipo
+  Cloudflare) era incorrecta. Verificado en vivo que usa **DataDome**, un
+  sistema de fingerprinting por JS más agresivo:
+  1. `curl_cffi` con `impersonate="chrome"` → **bloqueado (403)**, probado
+     contra idealista.com real.
+  2. FlareSolverr → responde 200 pero sigue siendo la página de bloqueo de
+     DataDome; FlareSolverr solo sabe resolver retos de Cloudflare, no de
+     DataDome. **Descartado**, ya no forma parte del compose.
+  3. Proxy residencial + navegador con stealth: sin garantía de éxito
+     contra DataDome y con coste recurrente — no se persigue por ahora.
+  - **Vía elegida: API oficial de Idealista** (gratuita, ~100 req/mes,
+    OAuth2 client_credentials). Solicitada en
+    https://developers.idealista.com/access-request. Contrato de la API
+    verificado contra una implementación de referencia pública
+    (github.com/yagueto/idealista-api): token en
+    `POST https://api.idealista.com/oauth/token` (Basic auth con
+    api_key:api_secret en base64), búsqueda en
+    `POST https://api.idealista.com/3.5/es/search` (Bearer token, params
+    country/operation/propertyType/center/distance/maxItems/numPage/...).
+    Como `SearchScope` solo tiene city/zones en texto libre (no
+    coordenadas), se geocodifican vía Nominatim/OpenStreetMap antes de
+    llamar a la API. Implementado en
+    `houselocator-ingest/src/ingest/portals/idealista.py`, con lectura
+    defensiva (`.get()`) de los campos de cada anuncio que no se han
+    podido verificar todavía sin credenciales reales (tamaño, habitaciones,
+    planta, barrio, coordenadas...) — si algún nombre de campo resulta
+    incorrecto se pierde ese dato puntual, no rompe el pipeline. Mientras
+    no lleguen las credenciales (`IDEALISTA_API_KEY`/`IDEALISTA_API_SECRET`
+    en `.env`), el portal queda en `status='blocked'` en `scrape_runs` sin
+    afectar a Fotocasa.
+- **Circuit breaker global**: 403/429/captcha/credenciales ausentes →
+  backoff exponencial (5min→1h→6h), `status='blocked'` en `scrape_runs`,
+  alerta al chat admin.
 - **Reintentos**: `tenacity`, 3 intentos con backoff por página; fallo de
   parseo de una card individual no aborta la página (se loggea con `raw`).
 
@@ -295,18 +320,17 @@ Razones frente a self-hosted en el Mac:
 - El Lexar es un disco externo/extraíble: mala base para un Postgres 24/7
   (desmontajes). En el Lexar vive el **código**; los **datos** viven en el
   VPS.
-- 4GB sobran para Postgres + 2 contenedores Python + FlareSolverr ocasional.
+- 4GB sobran de sobra para Postgres + 2 contenedores Python.
 
 `houselocator-platform/scripts/deploy.sh`: rsync/git pull + `docker compose
 up -d --build` por SSH. Sin CI/CD ni Kubernetes. Backup: `pg_dump` nocturno
 en el VPS + descarga semanal al Lexar.
 
-**Riesgo a vigilar**: IPs de datacenter tienen más papeletas de bloqueo en
-Idealista que una IP residencial (mitigado por la escalera anti-bot del §3).
-**Plan B ya soportado por el diseño**: si Idealista bloquea el VPS de forma
-persistente, el job de Idealista se ejecuta *solo* en el Mac (launchd cada
-45 min, escribe al Postgres del VPS vía Tailscale) — `ingest` es stateless y
-la DB es el punto de encuentro, no requiere cambios de diseño.
+**Nota (actualizada tras §3)**: el riesgo de "IP de datacenter bloqueada por
+Idealista" ya no aplica — Idealista se consume vía su API oficial
+autenticada (OAuth2), no por scraping HTML, así que no hay IP a bloquear
+por ese lado. El único riesgo real de IP de datacenter queda para Fotocasa,
+que de momento no ha dado señales de bloqueo por volumen personal.
 
 ## 7. Roadmap por fases
 
@@ -336,11 +360,14 @@ la DB es el punto de encuentro, no requiere cambios de diseño.
 7. `full_sweep` diario, `price_history`, eventos `price_drop`/`delisted` (+
    alerta), `scrape_runs` + canary + alertas admin.
 
-**Fase 1.2 — Idealista**
-8. Parser Idealista (`curl_cffi`), rate limiting conservador, circuit
-   breaker; FlareSolverr como sidecar solo si hace falta. Dedupe
-   cross-portal ligero (mismo precio+m²+zona → `possible_duplicate` en
-   `features`, sin bloquear alertas por ello en v1).
+**Fase 1.2 — Idealista** (implementado vía API oficial, ver §3)
+8. Cliente OAuth2 + geocodificación Nominatim + parser de `elementList`
+   implementado en `idealista.py`. Pendiente de credenciales reales
+   (`IDEALISTA_API_KEY`/`IDEALISTA_API_SECRET`, solicitadas) para verificar
+   los nombres de campo no confirmados y hacer la primera prueba end-to-end
+   contra la API real. Dedupe cross-portal ligero (mismo precio+m²+zona →
+   `possible_duplicate` en `features`, sin bloquear alertas por ello en v1)
+   queda pendiente como mejora posterior.
 
 **Fase 1.3 — Tendencias**
 9. Job `zone_daily_stats` + comandos `/trend`, `/stats`, `/history`,

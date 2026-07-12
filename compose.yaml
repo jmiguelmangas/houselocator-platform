@@ -48,15 +48,6 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-houselocator}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-houselocator}?sslmode=disable
 
-  # Solo se activa si Idealista bloquea sistemáticamente curl_cffi.
-  # docker compose --profile antibot up -d
-  flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    restart: unless-stopped
-    profiles: ["antibot"]
-    ports:
-      - "127.0.0.1:8191:8191"
-
   # Fase 4, opcional. docker compose --profile web up -d
   web:
     build: ../houselocator-web
