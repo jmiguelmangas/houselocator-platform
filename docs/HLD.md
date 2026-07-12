@@ -356,9 +356,17 @@ que de momento no ha dado señales de bloqueo por volumen personal.
 6. Provisionar Hetzner + Tailscale + deploy. **Hito: alertas 24/7 de un
    portal.**
 
-**Fase 1.1 — Histórico y robustez**
+**Fase 1.1 — Histórico y robustez** ✅ implementado y verificado con datos reales
 7. `full_sweep` diario, `price_history`, eventos `price_drop`/`delisted` (+
-   alerta), `scrape_runs` + canary + alertas admin.
+   alerta), `scrape_runs` + canary + alertas admin. `full_sweep` probado en
+   vivo contra Fotocasa (recorre todas las páginas, no solo las 3 de
+   `new_scan`); el guard-rail de delisting (2 sweeps consecutivos con
+   éxito) verificado de forma determinista envejeciendo el `last_seen_at`
+   de un anuncio real y comprobando que solo ese se marcaba `delisted`. El
+   canary (antes escrito pero nunca conectado) ya avisa al chat admin de
+   Telegram si el parser parece roto. `price_drop` está implementado en el
+   upsert (ver `db.py`) pero aún no se ha observado en producción — hace
+   falta que un anuncio real baje de precio entre dos scans para verlo.
 
 **Fase 1.2 — Idealista** (implementado vía API oficial, ver §3)
 8. Cliente OAuth2 + geocodificación Nominatim + parser de `elementList`
