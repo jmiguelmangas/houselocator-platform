@@ -49,3 +49,11 @@ HOUSELOCATOR_DEPLOY_HOST=user@vps ./scripts/deploy.sh
 
 Ver [`docs/HLD.md`](docs/HLD.md) §6 para la recomendación de hosting (VPS
 Hetzner + Tailscale) y el resto de decisiones de arquitectura.
+
+## Grafo de código
+
+`python3 scripts/graphify_export.py .` genera `outputs/graph-export.json`
+(imports/docs de este repo). Desde la carpeta padre `houselocator/`,
+`python3 scripts/graphify_aggregate.py .` agrega los 3 repos en un grafo
+multi-repo con dependencias detectadas entre ellos (mismo patrón que
+AeroRoute).

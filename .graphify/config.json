@@ -1,0 +1,6 @@
+{
+  "repo": "houselocator-platform",
+  "language": "none",
+  "src_roots": [],
+  "doc_globs": ["README.md", "docs/**/*.md"]
+}
