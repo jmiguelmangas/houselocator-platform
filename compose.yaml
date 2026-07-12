@@ -23,7 +23,7 @@ services:
         condition: service_healthy
     environment:
       DBMATE_MIGRATIONS_DIR: /db/migrations
-      DBMATE_DATABASE_URL: postgres://${POSTGRES_USER:-houselocator}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-houselocator}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-houselocator}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-houselocator}?sslmode=disable
     volumes:
       - ./db:/db
     command: ["up"]
