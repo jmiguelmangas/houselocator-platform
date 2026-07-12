@@ -369,9 +369,14 @@ que de momento no ha dado señales de bloqueo por volumen personal.
    `possible_duplicate` en `features`, sin bloquear alertas por ello en v1)
    queda pendiente como mejora posterior.
 
-**Fase 1.3 — Tendencias**
-9. Job `zone_daily_stats` + comandos `/trend`, `/stats`, `/history`,
-   `/compare`.
+**Fase 1.3 — Tendencias** ✅ implementado y verificado con datos reales
+9. Job `zone_daily_stats` (corre a diario vía scheduler; se puede lanzar a
+   mano con `stats.refresh_zone_daily_stats`) + comandos `/trend`, `/stats`,
+   `/history`, `/compare` con gráficos matplotlib. `/trend` y `/compare`
+   probados en vivo con datos reales de Collado Villalba. De camino se
+   arregló un bug real: la comparación de ciudad/zona era sensible a
+   mayúsculas y a los guiones "inteligentes" del teclado del móvil — ver
+   `houselocator-bot/src/bot/db.py::normalize_place`.
 
 **Fase 4 (opcional) — Dashboard**
 10. `houselocator-web` con Streamlit, tras ≥3 meses de datos.
