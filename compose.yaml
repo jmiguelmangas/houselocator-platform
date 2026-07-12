@@ -1,0 +1,75 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-houselocator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-houselocator}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-houselocator}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_DATABASE_URL: postgres://${POSTGRES_USER:-houselocator}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-houselocator}?sslmode=disable
+    volumes:
+      - ./db:/db
+    command: ["up"]
+
+  ingest:
+    build: ../houselocator-ingest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-houselocator}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-houselocator}?sslmode=disable
+
+  bot:
+    build: ../houselocator-bot
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-houselocator}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-houselocator}?sslmode=disable
+
+  # Solo se activa si Idealista bloquea sistemáticamente curl_cffi.
+  # docker compose --profile antibot up -d
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    restart: unless-stopped
+    profiles: ["antibot"]
+    ports:
+      - "127.0.0.1:8191:8191"
+
+  # Fase 4, opcional. docker compose --profile web up -d
+  web:
+    build: ../houselocator-web
+    restart: unless-stopped
+    profiles: ["web"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-houselocator}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-houselocator}?sslmode=disable
+    ports:
+      - "127.0.0.1:8501:8501"
+
+volumes:
+  db-data:
